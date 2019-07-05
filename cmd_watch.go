@@ -134,7 +134,7 @@ func waitCircle(parent context.Context, cfg watchConfig) (bool, time.Time, error
 	// In that case there are no jobs running and some jobs blocked that could
 	// still run. If we think the build has passed and finished, let's give it a
 	// buffer to spin up new jobs before really considering it done.
-	checksLeft := numChecks
+	checksLeft := numChecks + 1 // +1 because we decrement at the beginning of the loop
 
 	go func() {
 		defer close(done)
@@ -152,7 +152,7 @@ func waitCircle(parent context.Context, cfg watchConfig) (bool, time.Time, error
 			finished, failed, err := evalWorkflow(client, cfg.workflowID, cfg.jobName)
 			if finished {
 				checksLeft--
-				if checksLeft < 0 {
+				if checksLeft <= 0 {
 					// we're done checking.
 					passed = !failed
 					if passed {
@@ -165,7 +165,7 @@ func waitCircle(parent context.Context, cfg watchConfig) (bool, time.Time, error
 				if err != nil {
 					// we previously successfully queried for the workflow; this is likely a
 					// transient error
-					fmt.Printf("Querying the CirlceCI API failed with %s; trying %d more times before giving up.\n", err.Error(), checksLeft+1)
+					fmt.Printf("Querying the CirlceCI API failed with %s; trying %d more times before giving up.\n", err.Error(), checksLeft)
 					continue
 				}
 				if failed {
@@ -174,7 +174,7 @@ func waitCircle(parent context.Context, cfg watchConfig) (bool, time.Time, error
 					return
 				}
 				// yay loks like maybe we're done?
-				fmt.Printf("Build appears finished; checking %d more times to make sure.\n", checksLeft+1)
+				fmt.Printf("Build appears finished; checking %d more times to make sure.\n", checksLeft)
 				continue
 			}
 			// if we previously thought we were finished but now realize we weren't,
