@@ -312,6 +312,78 @@ workflows:
             - test
 ```
 
+GitLab CI example:
+```yaml
+# Not a huge fan of YAML anchors, but it's the easiest way to
+# extend the scripts in jobs where you need other before_script and after_script
+.default_before_script: &default_before_script
+  - export STEP_START=$(date +%s)
+  - export STEP_SPAN_ID=$(echo $CI_JOB_NAME | sum | cut -f 1 -d \ )
+  - export PATH="$PATH:buildevents/bin/"
+  - echo "export STEP_START=$STEP_START" >> buildevents/env
+  - echo "export STEP_SPAN_ID=$STEP_SPAN_ID" >> buildevents/env
+  - source buildevents/env
+
+.default_after_script: &default_after_script
+  - source buildevents/env
+  - buildevents step $CI_PIPELINE_ID $STEP_SPAN_ID $STEP_START $CI_JOB_NAME
+
+default:
+  before_script:
+    - *default_before_script
+  after_script:
+    - *default_after_script
+
+stages:
+  # .pre and .post are guaranteed to be first and last run jobs
+  # https://docs.gitlab.com/ee/ci/yaml/README.html#pre-and-post
+  - .pre
+  - build
+  - test
+  - .post
+
+setup:
+  before_script: []
+  after_script: []
+  script:
+    - curl -L -o main https://github.com/honeycombio/buildevents/releases/latest/download/buildevents-linux-amd64
+    - chmod 755 main
+    - mkdir -p buildevents/bin/
+    - mv main buildevents/bin/buildevents
+    - export BUILD_START=$(date +%s)
+    - echo "export BUILD_START=$(date +%s)" >> buildevents/env
+  artifacts:
+    paths:
+      - buildevents
+  stage: .pre
+
+build:
+  script:
+    - buildevents cmd $CI_PIPELINE_ID $STEP_SPAN_ID build -- go install ./...
+  stage: build
+
+test:
+  script:
+    - buildevents cmd $CI_PIPELINE_ID $STEP_SPAN_ID build -- go test ./...
+  stage: test
+
+send_success_trace:
+  script:
+    - "traceURL=$(buildevents build $CI_PIPELINE_ID $BUILD_START failure)"
+    - "echo \"Honeycomb Trace: $traceURL\""
+  stage: .post
+  rules:
+    - when: on_success
+
+send_failure_trace:
+  script:
+    - "traceURL=$(buildevents build $CI_PIPELINE_ID $BUILD_START success)"
+    - "echo \"Honeycomb Trace: $traceURL\""
+  stage: .post
+  rules:
+    - when: on_failure
+```
+
 # Positional argument reference
 
 All the arguments to the various `buildevents` modes are listed above, but for
